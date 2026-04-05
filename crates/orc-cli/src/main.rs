@@ -3,22 +3,14 @@ mod input;
 mod render;
 mod repl;
 
-use orc_api::client::{ApiClient, AuthHeader};
-use orc_auth::oauth::OAuthProvider;
-use orc_auth::provider::AuthProvider;
-use orc_auth::token_store;
-use orc_config::loader;
-use orc_config::settings::Settings;
-use orc_core::agent::Agent;
-use orc_permissions::policy::PermissionChecker;
-use orc_tools::registry::ToolRegistry;
+use orc_bridge::process::{self, ClaudeBridge};
 
 use clap::{Parser, Subcommand};
 use tracing_subscriber::EnvFilter;
 
 use std::env;
 use std::path::PathBuf;
-use std::process;
+use std::process as proc;
 
 #[derive(Parser)]
 #[command(name = "orc", about = "CLI coding assistant powered by Claude")]
@@ -29,10 +21,6 @@ struct Cli {
     /// Send a single prompt and exit
     #[arg(short, long)]
     prompt: Option<String>,
-
-    /// API key (overrides environment/config)
-    #[arg(long)]
-    api_key: Option<String>,
 
     /// Model to use
     #[arg(short, long)]
@@ -45,10 +33,8 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Authenticate with your Claude subscription via OAuth
-    Login,
-    /// Remove stored credentials
-    Logout,
+    /// Check Claude Code installation status
+    Doctor,
 }
 
 #[tokio::main]
@@ -60,18 +46,23 @@ async fn main() {
 
     if let Err(e) = run().await {
         eprintln!("error: {e}");
-        process::exit(1);
+        proc::exit(1);
     }
 }
 
 async fn run() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
-    if let Some(cmd) = &cli.command {
-        return match cmd {
-            Command::Login => run_login().await,
-            Command::Logout => run_logout(),
-        };
+    if let Some(Command::Doctor) = &cli.command {
+        return run_doctor();
+    }
+
+    if !process::is_claude_installed() {
+        anyhow::bail!(
+            "Claude Code is not installed.\n\
+             Install it with: npm install -g @anthropic-ai/claude-code\n\
+             Then authenticate with: claude login"
+        );
     }
 
     let cwd = match cli.cwd {
@@ -79,91 +70,55 @@ async fn run() -> anyhow::Result<()> {
         None => env::current_dir()?,
     };
 
-    let cfg = loader::load();
-
-    let model = cli.model
-        .unwrap_or(cfg.model.clone());
-    let max_tokens = cfg.max_tokens;
-
-    let auth = resolve_auth(&cli.api_key).await?;
-    let client = build_client(auth, &cfg)?;
-
-    let tools = ToolRegistry::build_default();
-    let permissions = PermissionChecker::new(
-        cfg.permissions.auto_allow.clone(),
-        cfg.permissions.deny.clone(),
-    );
-
-    let agent = Agent::new(client, tools, permissions, model, max_tokens, cwd);
+    let mut bridge = ClaudeBridge::new(cwd);
+    if let Some(model) = cli.model {
+        bridge = bridge.with_model(model);
+    }
 
     match cli.prompt {
-        Some(prompt) => run_oneshot(agent, &prompt).await,
-        None => repl::run(agent).await,
+        Some(prompt) => run_oneshot(bridge, &prompt).await,
+        None => repl::run(bridge).await,
     }
 }
 
-async fn run_login() -> anyhow::Result<()> {
-    let provider = OAuthProvider::new()
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
-    provider.login().await
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
+fn run_doctor() -> anyhow::Result<()> {
+    if process::is_claude_installed() {
+        println!("  Claude Code: installed");
+    } else {
+        println!("  Claude Code: NOT FOUND");
+        println!("  Install with: npm install -g @anthropic-ai/claude-code");
+    }
     Ok(())
 }
 
-fn run_logout() -> anyhow::Result<()> {
-    token_store::clear()
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
-    println!("  Credentials removed.");
-    Ok(())
-}
+async fn run_oneshot(mut bridge: ClaudeBridge, prompt: &str) -> anyhow::Result<()> {
+    use orc_bridge::process::OrcEvent;
+    use tokio::sync::mpsc;
 
-async fn run_oneshot(mut agent: Agent, prompt: &str) -> anyhow::Result<()> {
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let (tx, mut rx) = mpsc::unbounded_channel();
 
-    agent.send(prompt, &tx).await?;
+    let send_fut = bridge.send(prompt, &tx);
+    tokio::pin!(send_fut);
 
-    drop(tx);
-    while let Some(event) = rx.try_recv().ok() {
-        match event {
-            orc_core::agent::AgentEvent::Text(text) => print!("{text}"),
-            orc_core::agent::AgentEvent::Error(msg) => eprintln!("error: {msg}"),
-            _ => {}
+    loop {
+        tokio::select! {
+            result = &mut send_fut => {
+                while let Ok(event) = rx.try_recv() {
+                    if let OrcEvent::Text(text) = event {
+                        print!("{text}");
+                    }
+                }
+                println!();
+                result.map_err(|e| anyhow::anyhow!("{e}"))?;
+                break;
+            }
+            Some(event) = rx.recv() => {
+                if let OrcEvent::Text(text) = event {
+                    print!("{text}");
+                }
+            }
         }
     }
-    println!();
 
     Ok(())
-}
-
-async fn resolve_auth(cli_key: &Option<String>) -> anyhow::Result<AuthHeader> {
-    if let Some(key) = cli_key {
-        return Ok(AuthHeader::ApiKey(key.clone()));
-    }
-
-    if let Ok(token) = env::var("ANTHROPIC_AUTH_TOKEN") {
-        return Ok(AuthHeader::Bearer(token));
-    }
-
-    if let Ok(key) = env::var("ANTHROPIC_API_KEY") {
-        return Ok(AuthHeader::ApiKey(key));
-    }
-
-    if token_store::credentials_exist() {
-        let provider = OAuthProvider::new()
-            .map_err(|e| anyhow::anyhow!("{e}"))?;
-        let token = provider.get_token().await
-            .map_err(|e| anyhow::anyhow!("{e}"))?;
-        return Ok(AuthHeader::Bearer(token.access_token));
-    }
-
-    anyhow::bail!(
-        "no credentials found. Set ANTHROPIC_API_KEY or run `orc login`"
-    )
-}
-
-fn build_client(auth: AuthHeader, cfg: &Settings) -> anyhow::Result<ApiClient> {
-    match &cfg.api_base_url {
-        Some(url) => Ok(ApiClient::with_base_url(auth, url)?),
-        None => Ok(ApiClient::new(auth)?),
-    }
 }

@@ -9,20 +9,13 @@ name = "orc"
 path = "src/main.rs"
 
 [dependencies]
-orc-core.workspace = true
-orc-api.workspace = true
-orc-auth.workspace = true
+orc-bridge.workspace = true
 orc-config.workspace = true
-orc-tools.workspace = true
-orc-permissions.workspace = true
 orc-git.workspace = true
 tokio.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 crossterm.workspace = true
-syntect.workspace = true
-pulldown-cmark.workspace = true
 reedline.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
-serde_json.workspace = true

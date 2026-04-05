@@ -30,33 +30,6 @@ impl Renderer {
         let _ = out.flush();
     }
 
-    pub fn print_tool_result(&mut self, output: &str, is_error: bool) {
-        let mut out = self.stdout.lock();
-
-        let color = if is_error {
-            SetForegroundColor(Color::Red)
-        } else {
-            SetForegroundColor(Color::DarkGreen)
-        };
-
-        let lines: Vec<&str> = output.lines().collect();
-        let preview = if lines.len() > 10 {
-            let mut buf = String::new();
-            for line in &lines[..10] {
-                buf.push_str("    ");
-                buf.push_str(line);
-                buf.push('\n');
-            }
-            buf.push_str(&format!("    ... ({} more lines)", lines.len() - 10));
-            buf
-        } else {
-            output.to_string()
-        };
-
-        let _ = writeln!(out, "{color}{preview}{reset}", reset = ResetColor);
-        let _ = out.flush();
-    }
-
     pub fn print_error(&mut self, msg: &str) {
         let mut out = self.stdout.lock();
         let _ = writeln!(

@@ -5,6 +5,7 @@ members = [
     "crates/orc-core",
     "crates/orc-api",
     "crates/orc-auth",
+    "crates/orc-bridge",
     "crates/orc-tools",
     "crates/orc-permissions",
     "crates/orc-mcp",
@@ -74,6 +75,7 @@ futures = "0.3"
 # Internal crates
 orc-api = { path = "crates/orc-api" }
 orc-auth = { path = "crates/orc-auth" }
+orc-bridge = { path = "crates/orc-bridge" }
 orc-config = { path = "crates/orc-config" }
 orc-core = { path = "crates/orc-core" }
 orc-tools = { path = "crates/orc-tools" }
