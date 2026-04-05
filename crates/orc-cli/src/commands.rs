@@ -2,6 +2,7 @@ pub enum SlashCommand {
     Help,
     Clear,
     Compact,
+    Status,
     Exit,
     Unknown(String),
 }
@@ -17,6 +18,7 @@ pub fn parse(input: &str) -> Option<SlashCommand> {
         "/help" => Some(SlashCommand::Help),
         "/clear" => Some(SlashCommand::Clear),
         "/compact" => Some(SlashCommand::Compact),
+        "/status" => Some(SlashCommand::Status),
         "/exit" | "/quit" => Some(SlashCommand::Exit),
         other => Some(SlashCommand::Unknown(other.to_string())),
     }
@@ -27,6 +29,7 @@ pub fn print_help() {
     println!("    /help     Show this help message");
     println!("    /clear    Clear conversation history");
     println!("    /compact  Summarize and compact conversation");
+    println!("    /status   Show git status and token usage");
     println!("    /exit     Exit orc");
     println!();
 }

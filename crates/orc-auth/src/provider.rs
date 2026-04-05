@@ -53,7 +53,8 @@ pub fn resolve() -> Result<Box<dyn AuthProvider>, AuthError> {
     }
 
     if token_store::credentials_exist() {
-        return Ok(Box::new(OAuthProvider::new()));
+        let provider = OAuthProvider::new()?;
+        return Ok(Box::new(provider));
     }
 
     Err(AuthError::NoCredentials)

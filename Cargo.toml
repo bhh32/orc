@@ -42,7 +42,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Auth
-anthropic-auth = "0.1"
+anthropic-auth = { version = "0.1", default-features = false, features = ["async", "browser", "callback-server", "rustls-tls"] }
 
 # TUI
 crossterm = "0.28"

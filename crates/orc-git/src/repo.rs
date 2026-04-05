@@ -45,6 +45,25 @@ impl GitRepo {
     pub fn diff_staged(&self) -> Result<String, GitError> {
         run_git(&self.root, &["diff", "--cached"])
     }
+
+    pub fn diff_unstaged(&self) -> Result<String, GitError> {
+        run_git(&self.root, &["diff"])
+    }
+
+    pub fn log_oneline(&self, count: usize) -> Result<String, GitError> {
+        let n = format!("-{count}");
+        run_git(&self.root, &["log", "--oneline", &n])
+    }
+
+    pub fn add(&self, paths: &[&str]) -> Result<String, GitError> {
+        let mut args = vec!["add"];
+        args.extend(paths);
+        run_git(&self.root, &args)
+    }
+
+    pub fn commit(&self, message: &str) -> Result<String, GitError> {
+        run_git(&self.root, &["commit", "-m", message])
+    }
 }
 
 fn run_git(dir: &Path, args: &[&str]) -> Result<String, GitError> {

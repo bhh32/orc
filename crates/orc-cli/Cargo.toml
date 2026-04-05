@@ -15,6 +15,7 @@ orc-auth.workspace = true
 orc-config.workspace = true
 orc-tools.workspace = true
 orc-permissions.workspace = true
+orc-git.workspace = true
 tokio.workspace = true
 anyhow.workspace = true
 clap.workspace = true

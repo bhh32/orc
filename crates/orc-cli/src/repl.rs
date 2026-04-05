@@ -3,9 +3,12 @@ use crate::input::{InputReader, ReadResult};
 use crate::render::Renderer;
 
 use orc_core::agent::{Agent, AgentEvent};
+use orc_git::GitRepo;
 
 use anyhow::Result;
 use tokio::sync::mpsc;
+
+use std::env;
 
 pub async fn run(mut agent: Agent) -> Result<()> {
     let mut input = InputReader::new();
@@ -25,6 +28,7 @@ pub async fn run(mut agent: Agent) -> Result<()> {
                             renderer.print_status("conversation cleared");
                         }
                         SlashCommand::Exit => break,
+                        SlashCommand::Status => show_status(&agent, &mut renderer),
                         SlashCommand::Compact => {
                             renderer.print_status("compact not yet implemented");
                         }
@@ -80,6 +84,27 @@ async fn process_turn(agent: &mut Agent, input: &str, renderer: &mut Renderer) -
 fn drain_events(rx: &mut mpsc::UnboundedReceiver<AgentEvent>, renderer: &mut Renderer) {
     while let Ok(event) = rx.try_recv() {
         render_event(event, renderer);
+    }
+}
+
+fn show_status(agent: &Agent, renderer: &mut Renderer) {
+    let (input, output) = agent.conversation().token_counts();
+    let msgs = agent.conversation().len();
+    renderer.print_status(&format!("  messages: {msgs}  |  tokens: {input} in / {output} out"));
+
+    let cwd = env::current_dir().unwrap_or_default();
+    match GitRepo::discover(&cwd) {
+        Ok(repo) => {
+            if let Ok(branch) = repo.current_branch() {
+                renderer.print_status(&format!("  git: {branch}"));
+            }
+            if let Ok(status) = repo.status_short() {
+                if !status.is_empty() {
+                    renderer.print_status(&format!("  changes:\n{status}"));
+                }
+            }
+        }
+        Err(_) => renderer.print_status("  git: not a repository"),
     }
 }
 
