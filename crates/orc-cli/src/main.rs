@@ -10,12 +10,12 @@ use orc_core::agent::Agent;
 use orc_permissions::policy::PermissionChecker;
 use orc_tools::registry::ToolRegistry;
 
-use anyhow::{Context, Result};
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
 
 use std::env;
 use std::path::PathBuf;
+use std::process;
 
 #[derive(Parser)]
 #[command(name = "orc", about = "CLI coding assistant powered by Claude")]
@@ -38,17 +38,24 @@ struct Cli {
 }
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() {
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
         .compact()
         .init();
 
+    if let Err(e) = run().await {
+        eprintln!("error: {e}");
+        process::exit(1);
+    }
+}
+
+async fn run() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     let cwd = match cli.cwd {
         Some(dir) => dir,
-        None => env::current_dir().context("failed to get cwd")?,
+        None => env::current_dir()?,
     };
 
     let cfg = loader::load();
@@ -57,7 +64,7 @@ async fn main() -> Result<()> {
         .unwrap_or(cfg.model.clone());
     let max_tokens = cfg.max_tokens;
 
-    let auth = resolve_auth(&cli.api_key, &cfg)?;
+    let auth = resolve_auth(&cli.api_key)?;
     let client = build_client(auth, &cfg)?;
 
     let tools = ToolRegistry::build_default();
@@ -74,7 +81,7 @@ async fn main() -> Result<()> {
     }
 }
 
-async fn run_oneshot(mut agent: Agent, prompt: &str) -> Result<()> {
+async fn run_oneshot(mut agent: Agent, prompt: &str) -> anyhow::Result<()> {
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
 
     agent.send(prompt, &tx).await?;
@@ -92,7 +99,7 @@ async fn run_oneshot(mut agent: Agent, prompt: &str) -> Result<()> {
     Ok(())
 }
 
-fn resolve_auth(cli_key: &Option<String>, _cfg: &Settings) -> Result<AuthHeader> {
+fn resolve_auth(cli_key: &Option<String>) -> anyhow::Result<AuthHeader> {
     if let Some(key) = cli_key {
         return Ok(AuthHeader::ApiKey(key.clone()));
     }
@@ -110,11 +117,9 @@ fn resolve_auth(cli_key: &Option<String>, _cfg: &Settings) -> Result<AuthHeader>
     )
 }
 
-fn build_client(auth: AuthHeader, cfg: &Settings) -> Result<ApiClient> {
+fn build_client(auth: AuthHeader, cfg: &Settings) -> anyhow::Result<ApiClient> {
     match &cfg.api_base_url {
-        Some(url) => ApiClient::with_base_url(auth, url)
-            .context("failed to create API client"),
-        None => ApiClient::new(auth)
-            .context("failed to create API client"),
+        Some(url) => Ok(ApiClient::with_base_url(auth, url)?),
+        None => Ok(ApiClient::new(auth)?),
     }
 }

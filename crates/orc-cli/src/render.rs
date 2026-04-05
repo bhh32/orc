@@ -41,8 +41,14 @@ impl Renderer {
 
         let lines: Vec<&str> = output.lines().collect();
         let preview = if lines.len() > 10 {
-            let shown: Vec<&str> = lines[..10].to_vec();
-            format!("{}  ... ({} more lines)", shown.join("\n    "), lines.len() - 10)
+            let mut buf = String::new();
+            for line in &lines[..10] {
+                buf.push_str("    ");
+                buf.push_str(line);
+                buf.push('\n');
+            }
+            buf.push_str(&format!("    ... ({} more lines)", lines.len() - 10));
+            buf
         } else {
             output.to_string()
         };

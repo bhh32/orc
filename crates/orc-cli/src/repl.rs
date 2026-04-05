@@ -55,18 +55,32 @@ pub async fn run(mut agent: Agent) -> Result<()> {
 async fn process_turn(agent: &mut Agent, input: &str, renderer: &mut Renderer) -> Result<()> {
     let (tx, mut rx) = mpsc::unbounded_channel();
 
-    let send_result = agent.send(input, &tx).await;
+    let send_fut = agent.send(input, &tx);
 
-    drop(tx);
-    while let Some(event) = rx.try_recv().ok() {
-        render_event(event, renderer);
-    }
+    tokio::pin!(send_fut);
 
-    if let Err(e) = send_result {
-        renderer.print_error(&format!("{e:#}"));
+    loop {
+        tokio::select! {
+            result = &mut send_fut => {
+                drain_events(&mut rx, renderer);
+                if let Err(e) = result {
+                    renderer.print_error(&format!("{e:#}"));
+                }
+                break;
+            }
+            Some(event) = rx.recv() => {
+                render_event(event, renderer);
+            }
+        }
     }
 
     Ok(())
+}
+
+fn drain_events(rx: &mut mpsc::UnboundedReceiver<AgentEvent>, renderer: &mut Renderer) {
+    while let Ok(event) = rx.try_recv() {
+        render_event(event, renderer);
+    }
 }
 
 fn render_event(event: AgentEvent, renderer: &mut Renderer) {

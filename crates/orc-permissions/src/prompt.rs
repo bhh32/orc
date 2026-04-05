@@ -11,19 +11,28 @@ pub fn ask_permission(tool: &str, description: &str) -> io::Result<bool> {
     out.flush()?;
 
     terminal::enable_raw_mode()?;
-    let result = loop {
+    let result = read_yes_no();
+    terminal::disable_raw_mode()?;
+
+    let accepted = match result {
+        Ok(v) => v,
+        Err(e) => return Err(e),
+    };
+
+    let answer = if accepted { "yes" } else { "no" };
+    writeln!(out, "{answer}")?;
+
+    Ok(accepted)
+}
+
+fn read_yes_no() -> io::Result<bool> {
+    loop {
         if let Event::Key(KeyEvent { code, .. }) = event::read()? {
             match code {
-                KeyCode::Char('y') | KeyCode::Char('Y') => break true,
-                KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => break false,
+                KeyCode::Char('y') | KeyCode::Char('Y') => return Ok(true),
+                KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => return Ok(false),
                 _ => continue,
             }
         }
-    };
-    terminal::disable_raw_mode()?;
-
-    let answer = if result { "yes" } else { "no" };
-    writeln!(out, "{answer}")?;
-
-    Ok(result)
+    }
 }
