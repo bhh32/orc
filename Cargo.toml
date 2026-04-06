@@ -2,13 +2,7 @@
 resolver = "2"
 members = [
     "crates/orc-cli",
-    "crates/orc-core",
-    "crates/orc-api",
-    "crates/orc-auth",
     "crates/orc-bridge",
-    "crates/orc-tools",
-    "crates/orc-permissions",
-    "crates/orc-mcp",
     "crates/orc-config",
     "crates/orc-git",
 ]
@@ -22,10 +16,6 @@ repository = "https://github.com/bhh32/orc"
 [workspace.dependencies]
 # Async
 tokio = { version = "1", features = ["full"] }
-
-# HTTP
-reqwest = { version = "0.12", features = ["stream", "json", "rustls-tls"] }
-reqwest-eventsource = "0.6"
 
 # CLI
 clap = { version = "4", features = ["derive"] }
@@ -42,43 +32,14 @@ anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
-# Auth
-anthropic-auth = { version = "0.1", default-features = false, features = ["async", "browser", "callback-server", "rustls-tls"] }
-
 # TUI
 crossterm = "0.28"
-syntect = "5"
-pulldown-cmark = "0.12"
 reedline = "0.38"
 
-# Tools
-globset = "0.4"
-ignore = "0.4"
-similar = "2"
-regex = "1"
-
-# Config
-figment = { version = "0.10", features = ["toml", "json", "env"] }
-
-# Git
-gix = { version = "0.71", default-features = false }
-
-# Async trait
-async-trait = "0.1"
-
 # Misc
-uuid = { version = "1", features = ["v4"] }
-chrono = { version = "0.4", features = ["serde"] }
 dirs = "6"
-futures = "0.3"
 
 # Internal crates
-orc-api = { path = "crates/orc-api" }
-orc-auth = { path = "crates/orc-auth" }
 orc-bridge = { path = "crates/orc-bridge" }
 orc-config = { path = "crates/orc-config" }
-orc-core = { path = "crates/orc-core" }
-orc-tools = { path = "crates/orc-tools" }
-orc-permissions = { path = "crates/orc-permissions" }
-orc-mcp = { path = "crates/orc-mcp" }
 orc-git = { path = "crates/orc-git" }

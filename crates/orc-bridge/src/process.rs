@@ -47,6 +47,8 @@ pub enum OrcEvent {
 pub struct ClaudeBridge {
     cwd: PathBuf,
     model: Option<String>,
+    effort: Option<String>,
+    continue_last: bool,
     session: Session,
 }
 
@@ -55,6 +57,8 @@ impl ClaudeBridge {
         Self {
             cwd,
             model: None,
+            effort: None,
+            continue_last: false,
             session: Session::new(),
         }
     }
@@ -62,6 +66,24 @@ impl ClaudeBridge {
     pub fn with_model(mut self, model: String) -> Self {
         self.model = Some(model);
         self
+    }
+
+    pub fn with_resume(mut self, session_id: String) -> Self {
+        self.session.id = Some(session_id);
+        self
+    }
+
+    pub fn with_continue(mut self) -> Self {
+        self.continue_last = true;
+        self
+    }
+
+    pub fn set_model(&mut self, model: String) {
+        self.model = Some(model);
+    }
+
+    pub fn set_effort(&mut self, effort: String) {
+        self.effort = Some(effort);
     }
 
     pub fn session(&self) -> &Session {
@@ -87,9 +109,17 @@ impl ClaudeBridge {
             args.push(model.clone());
         }
 
+        if let Some(ref effort) = self.effort {
+            args.push("--effort".to_string());
+            args.push(effort.clone());
+        }
+
         if let Some(ref sid) = self.session.id {
             args.push("--resume".to_string());
             args.push(sid.clone());
+        } else if self.continue_last {
+            args.push("--continue".to_string());
+            self.continue_last = false;
         }
 
         let mut child = Command::new("claude")

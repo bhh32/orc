@@ -22,7 +22,25 @@ pub async fn run(mut bridge: ClaudeBridge) -> Result<()> {
                     match cmd {
                         SlashCommand::Exit => break,
                         SlashCommand::Status => show_status(&bridge, &mut renderer),
+                        SlashCommand::Cost => show_cost(&bridge, &mut renderer),
                         SlashCommand::Help => commands::print_help(&available_commands),
+                        SlashCommand::Model(name) => {
+                            if name.is_empty() {
+                                let cur = bridge.session().model.as_deref().unwrap_or("default");
+                                renderer.print_status(&format!("  current model: {cur}"));
+                            } else {
+                                bridge.set_model(name.clone());
+                                renderer.print_status(&format!("  model set to: {name}"));
+                            }
+                        }
+                        SlashCommand::Effort(level) => {
+                            if level.is_empty() {
+                                renderer.print_status("  usage: /effort <low|medium|high|max>");
+                            } else {
+                                bridge.set_effort(level.clone());
+                                renderer.print_status(&format!("  effort set to: {level}"));
+                            }
+                        }
                         SlashCommand::Passthrough(raw) => {
                             renderer.newline();
                             process_turn(&mut bridge, &raw, &mut renderer, &mut available_commands).await?;
@@ -86,6 +104,18 @@ fn drain_events(
     while let Ok(event) = rx.try_recv() {
         render_event(event, renderer, available_commands);
     }
+}
+
+fn show_cost(bridge: &ClaudeBridge, renderer: &mut Renderer) {
+    let session = bridge.session();
+    let model = session.model.as_deref().unwrap_or("unknown");
+    renderer.print_status(&format!("  session cost: ${:.4}", session.total_cost_usd));
+    renderer.print_status(&format!(
+        "  tokens: {} in / {} out",
+        session.total_input_tokens, session.total_output_tokens,
+    ));
+    renderer.print_status(&format!("  turns: {}", session.turns));
+    renderer.print_status(&format!("  model: {model}"));
 }
 
 fn show_status(bridge: &ClaudeBridge, renderer: &mut Renderer) {

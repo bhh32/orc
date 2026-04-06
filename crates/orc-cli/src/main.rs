@@ -3,9 +3,10 @@ mod input;
 mod render;
 mod repl;
 
-use orc_bridge::process::{self, ClaudeBridge};
+use orc_bridge::process::{self, ClaudeBridge, OrcEvent};
 
 use clap::{Parser, Subcommand};
+use tokio::sync::mpsc;
 use tracing_subscriber::EnvFilter;
 
 use std::env;
@@ -25,6 +26,18 @@ struct Cli {
     /// Model to use
     #[arg(short, long)]
     model: Option<String>,
+
+    /// Effort level (low, medium, high, max)
+    #[arg(short, long)]
+    effort: Option<String>,
+
+    /// Continue the most recent conversation
+    #[arg(short, long, name = "continue")]
+    continue_session: bool,
+
+    /// Resume a conversation by session ID
+    #[arg(short, long)]
+    resume: Option<String>,
 
     /// Working directory
     #[arg(short = 'C', long)]
@@ -71,8 +84,17 @@ async fn run() -> anyhow::Result<()> {
     };
 
     let mut bridge = ClaudeBridge::new(cwd);
+
     if let Some(model) = cli.model {
         bridge = bridge.with_model(model);
+    }
+    if let Some(effort) = cli.effort {
+        bridge.set_effort(effort);
+    }
+    if let Some(sid) = cli.resume {
+        bridge = bridge.with_resume(sid);
+    } else if cli.continue_session {
+        bridge = bridge.with_continue();
     }
 
     match cli.prompt {
@@ -92,9 +114,6 @@ fn run_doctor() -> anyhow::Result<()> {
 }
 
 async fn run_oneshot(mut bridge: ClaudeBridge, prompt: &str) -> anyhow::Result<()> {
-    use orc_bridge::process::OrcEvent;
-    use tokio::sync::mpsc;
-
     let (tx, mut rx) = mpsc::unbounded_channel();
 
     let send_fut = bridge.send(prompt, &tx);
