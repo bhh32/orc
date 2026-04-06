@@ -71,6 +71,32 @@ fn handle_insert(app: &mut App, key: KeyEvent) -> Action {
             app.backspace();
             Action::None
         }
+        KeyCode::Up | KeyCode::PageUp => {
+            app.scroll_offset = app.scroll_offset.saturating_sub(1);
+            Action::None
+        }
+        KeyCode::Down | KeyCode::PageDown => {
+            app.scroll_offset = app.scroll_offset.saturating_add(1);
+            Action::None
+        }
+        KeyCode::Left => {
+            app.input_cursor = app.input_cursor.saturating_sub(1);
+            Action::None
+        }
+        KeyCode::Right => {
+            if app.input_cursor < app.input.len() {
+                app.input_cursor += 1;
+            }
+            Action::None
+        }
+        KeyCode::Home => {
+            app.input_cursor = 0;
+            Action::None
+        }
+        KeyCode::End => {
+            app.input_cursor = app.input.len();
+            Action::None
+        }
         KeyCode::Char(ch) => {
             if key.modifiers.contains(KeyModifiers::CONTROL) && ch == 'd' {
                 return Action::Quit;
