@@ -1,17 +1,12 @@
 [package]
-name = "orc-cli"
+name = "orc-tui"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
-[[bin]]
-name = "orc"
-path = "src/main.rs"
-
 [dependencies]
 orc-bridge.workspace = true
-orc-tui.workspace = true
+ratatui.workspace = true
+crossterm.workspace = true
 tokio.workspace = true
 anyhow.workspace = true
-clap.workspace = true
-tracing-subscriber.workspace = true

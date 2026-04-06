@@ -1,8 +1,3 @@
-mod commands;
-mod input;
-mod render;
-mod repl;
-
 use orc_bridge::process::{self, ClaudeBridge, OrcEvent};
 
 use clap::{Parser, Subcommand};
@@ -99,7 +94,7 @@ async fn run() -> anyhow::Result<()> {
 
     match cli.prompt {
         Some(prompt) => run_oneshot(bridge, &prompt).await,
-        None => repl::run(bridge).await,
+        None => orc_tui::run(bridge).await,
     }
 }
 

@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/orc-cli",
+    "crates/orc-tui",
     "crates/orc-bridge",
     "crates/orc-config",
     "crates/orc-git",
@@ -35,11 +36,13 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # TUI
 crossterm = "0.28"
 reedline = "0.38"
+ratatui = { version = "0.29", features = ["crossterm"] }
 
 # Misc
 dirs = "6"
 
 # Internal crates
 orc-bridge = { path = "crates/orc-bridge" }
+orc-tui = { path = "crates/orc-tui" }
 orc-config = { path = "crates/orc-config" }
 orc-git = { path = "crates/orc-git" }
