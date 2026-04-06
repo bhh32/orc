@@ -93,7 +93,7 @@ fn handle_chat_normal(app: &mut App, key: KeyEvent) -> Action {
             Action::None
         }
         KeyCode::Char('G') => {
-            app.scroll_offset = u16::MAX;
+            app.scroll_to_bottom();
             Action::None
         }
         KeyCode::Char('g') => {

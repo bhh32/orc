@@ -91,13 +91,7 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
     let total_lines = lines.len() as u16;
     let visible = area.height.saturating_sub(1);
     let max_scroll = total_lines.saturating_sub(visible);
-
-    // Use user's scroll offset if set, otherwise auto-scroll to bottom
-    let scroll = if app.scroll_offset == u16::MAX || app.scroll_offset >= max_scroll {
-        max_scroll
-    } else {
-        app.scroll_offset.min(max_scroll)
-    };
+    let scroll = app.scroll_offset.min(max_scroll);
 
     let paragraph = Paragraph::new(lines)
         .block(block)

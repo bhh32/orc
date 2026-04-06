@@ -4,6 +4,7 @@ use crate::panes::sidebar::FileTree;
 
 use orc_bridge::process::OrcEvent;
 
+use std::collections::HashMap;
 use std::env;
 use std::path::Path;
 
@@ -79,6 +80,12 @@ pub struct App {
     pub sidebar: FileTree,
     pub edit_focus: EditFocus,
     pub picker: FilePicker,
+    pending_tools: HashMap<String, PendingTool>,
+}
+
+struct PendingTool {
+    name: String,
+    json_buf: String,
 }
 
 impl App {
@@ -106,6 +113,7 @@ impl App {
             sidebar: FileTree::from_dir(&cwd),
             edit_focus: EditFocus::Editor,
             picker: FilePicker::new(),
+            pending_tools: HashMap::new(),
         }
     }
 
@@ -134,6 +142,18 @@ impl App {
             }
             Err(e) => self.push_error(&format!("failed to open {}: {e}", path.display())),
         }
+    }
+
+    pub fn scroll_to_bottom(&mut self) {
+        self.scroll_offset = self.chat_line_count();
+    }
+
+    pub fn chat_line_count(&self) -> u16 {
+        let mut count: u16 = 0;
+        for msg in &self.messages {
+            count = count.saturating_add(msg.content.lines().count().max(1) as u16 + 1);
+        }
+        count
     }
 
     pub fn push_user_message(&mut self, text: &str) {
@@ -193,14 +213,27 @@ impl App {
             OrcEvent::Text(text) => {
                 self.streaming = true;
                 self.append_assistant_text(&text);
-                self.scroll_offset = u16::MAX;
+                self.scroll_to_bottom();
             }
-            OrcEvent::ToolStart { name, input, .. } => {
-                self.push_tool_use(&name, input);
-                self.scroll_offset = u16::MAX;
+            OrcEvent::ToolStart { name, id, .. } => {
+                self.pending_tools.insert(id, PendingTool {
+                    name,
+                    json_buf: String::new(),
+                });
             }
-            OrcEvent::ToolInput { .. } => {}
-            OrcEvent::ToolEnd { .. } => {}
+            OrcEvent::ToolInput { id, json_chunk } => {
+                if let Some(tool) = self.pending_tools.get_mut(&id) {
+                    tool.json_buf.push_str(&json_chunk);
+                }
+            }
+            OrcEvent::ToolEnd { id } => {
+                if let Some(tool) = self.pending_tools.remove(&id) {
+                    let input = serde_json::from_str(&tool.json_buf)
+                        .unwrap_or(serde_json::Value::Null);
+                    self.push_tool_use(&tool.name, input);
+                    self.scroll_to_bottom();
+                }
+            }
             OrcEvent::ToolResult { content, is_error, .. } => {
                 if !content.is_empty() {
                     self.push_tool_result(&content, is_error);
