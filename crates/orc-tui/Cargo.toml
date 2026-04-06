@@ -10,4 +10,5 @@ ratatui.workspace = true
 crossterm.workspace = true
 tokio.workspace = true
 anyhow.workspace = true
+notify.workspace = true
 helix-core = { git = "https://github.com/helix-editor/helix" }

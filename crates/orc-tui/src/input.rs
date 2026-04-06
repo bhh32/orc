@@ -29,22 +29,13 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
     }
 }
 
+// -- Chat mode --
+
 fn handle_chat_key(app: &mut App, key: KeyEvent) -> Action {
     match app.mode {
         Mode::Normal => handle_chat_normal(app, key),
         Mode::Insert => handle_chat_insert(app, key),
         Mode::Command => handle_command(app, key),
-    }
-}
-
-fn handle_edit_key(app: &mut App, key: KeyEvent) -> Action {
-    if app.mode == Mode::Command {
-        return handle_command(app, key);
-    }
-
-    match app.edit_focus {
-        EditFocus::Sidebar => handle_sidebar_key(app, key),
-        EditFocus::Editor => handle_editor_key(app, key),
     }
 }
 
@@ -136,119 +127,212 @@ fn handle_chat_insert(app: &mut App, key: KeyEvent) -> Action {
     }
 }
 
-fn handle_editor_key(app: &mut App, key: KeyEvent) -> Action {
-    let buf = &mut app.buffer;
+// -- Edit mode --
 
-    match buf.mode {
-        EditorMode::Normal => match key.code {
-            KeyCode::Char('i') => {
-                buf.mode = EditorMode::Insert;
-                Action::None
-            }
-            KeyCode::Char('a') => {
-                buf.move_cursor(Direction::Forward, 1);
-                buf.mode = EditorMode::Insert;
-                Action::None
-            }
-            KeyCode::Char('v') => {
-                buf.mode = EditorMode::Select;
-                Action::None
-            }
-            KeyCode::Char('h') | KeyCode::Left => {
-                buf.move_cursor(Direction::Backward, 1);
-                Action::None
-            }
-            KeyCode::Char('l') | KeyCode::Right => {
-                buf.move_cursor(Direction::Forward, 1);
-                Action::None
-            }
-            KeyCode::Char('j') | KeyCode::Down => {
-                buf.move_line(Direction::Forward, 1);
-                Action::None
-            }
-            KeyCode::Char('k') | KeyCode::Up => {
-                buf.move_line(Direction::Backward, 1);
-                Action::None
-            }
-            KeyCode::Char('d') => {
-                buf.delete_selection();
-                Action::None
-            }
-            KeyCode::Char(':') => {
-                app.mode = Mode::Command;
-                Action::None
-            }
-            KeyCode::Tab => {
-                app.edit_focus = EditFocus::Sidebar;
-                Action::None
-            }
-            _ => Action::None,
-        },
-        EditorMode::Insert => match key.code {
-            KeyCode::Esc => {
-                buf.mode = EditorMode::Normal;
-                Action::None
-            }
-            KeyCode::Enter => {
-                buf.insert_newline();
-                Action::None
-            }
-            KeyCode::Backspace => {
-                buf.delete_backward();
-                Action::None
-            }
-            KeyCode::Left => {
-                buf.move_cursor(Direction::Backward, 1);
-                Action::None
-            }
-            KeyCode::Right => {
-                buf.move_cursor(Direction::Forward, 1);
-                Action::None
-            }
-            KeyCode::Up => {
-                buf.move_line(Direction::Backward, 1);
-                Action::None
-            }
-            KeyCode::Down => {
-                buf.move_line(Direction::Forward, 1);
-                Action::None
-            }
-            KeyCode::Char(ch) => {
-                buf.insert_char(ch);
-                Action::None
-            }
-            _ => Action::None,
-        },
-        EditorMode::Select => match key.code {
-            KeyCode::Esc => {
-                buf.mode = EditorMode::Normal;
-                Action::None
-            }
-            KeyCode::Char('d') => {
-                buf.delete_selection();
-                buf.mode = EditorMode::Normal;
-                Action::None
-            }
-            KeyCode::Char('h') | KeyCode::Left => {
-                buf.move_cursor(Direction::Backward, 1);
-                Action::None
-            }
-            KeyCode::Char('l') | KeyCode::Right => {
-                buf.move_cursor(Direction::Forward, 1);
-                Action::None
-            }
-            KeyCode::Char('j') | KeyCode::Down => {
-                buf.move_line(Direction::Forward, 1);
-                Action::None
-            }
-            KeyCode::Char('k') | KeyCode::Up => {
-                buf.move_line(Direction::Backward, 1);
-                Action::None
-            }
-            _ => Action::None,
-        },
+fn handle_edit_key(app: &mut App, key: KeyEvent) -> Action {
+    if app.mode == Mode::Command {
+        return handle_command(app, key);
+    }
+
+    if app.buffer.mode == EditorMode::Search {
+        return handle_search(app, key);
+    }
+
+    match app.edit_focus {
+        EditFocus::Sidebar => handle_sidebar_key(app, key),
+        EditFocus::Editor => handle_editor_key(app, key),
     }
 }
+
+fn handle_editor_key(app: &mut App, key: KeyEvent) -> Action {
+    let mode = app.buffer.mode;
+
+    match mode {
+        EditorMode::Normal => handle_editor_normal(app, key),
+        EditorMode::Insert => handle_editor_insert(app, key),
+        EditorMode::Select => handle_editor_select(app, key),
+        EditorMode::Search => Action::None,
+    }
+}
+
+fn handle_editor_normal(app: &mut App, key: KeyEvent) -> Action {
+    if key.modifiers.contains(KeyModifiers::CONTROL) {
+        match key.code {
+            KeyCode::Char('u') => { app.buffer.undo(); return Action::None; }
+            KeyCode::Char('r') => { app.buffer.redo(); return Action::None; }
+            _ => {}
+        }
+    }
+
+    match key.code {
+        // Mode switches
+        KeyCode::Char('i') => { app.buffer.mode = EditorMode::Insert; }
+        KeyCode::Char('a') => {
+            app.buffer.move_cursor(Direction::Forward, 1);
+            app.buffer.mode = EditorMode::Insert;
+        }
+        KeyCode::Char('I') => {
+            app.buffer.goto_line_start();
+            app.buffer.mode = EditorMode::Insert;
+        }
+        KeyCode::Char('A') => {
+            app.buffer.goto_line_end();
+            app.buffer.mode = EditorMode::Insert;
+        }
+        KeyCode::Char('o') => {
+            app.buffer.goto_line_end();
+            app.buffer.insert_newline();
+            app.buffer.mode = EditorMode::Insert;
+        }
+        KeyCode::Char('O') => {
+            app.buffer.goto_line_start();
+            app.buffer.insert_newline();
+            app.buffer.move_line(Direction::Backward, 1);
+            app.buffer.mode = EditorMode::Insert;
+        }
+        KeyCode::Char('v') => { app.buffer.mode = EditorMode::Select; }
+
+        // Movement
+        KeyCode::Char('h') | KeyCode::Left  => app.buffer.move_cursor(Direction::Backward, 1),
+        KeyCode::Char('l') | KeyCode::Right => app.buffer.move_cursor(Direction::Forward, 1),
+        KeyCode::Char('j') | KeyCode::Down  => app.buffer.move_line(Direction::Forward, 1),
+        KeyCode::Char('k') | KeyCode::Up    => app.buffer.move_line(Direction::Backward, 1),
+
+        // Word motions
+        KeyCode::Char('w') => app.buffer.word_next(),
+        KeyCode::Char('b') => app.buffer.word_prev(),
+        KeyCode::Char('e') => app.buffer.word_end(),
+
+        // Line
+        KeyCode::Char('0') | KeyCode::Home => app.buffer.goto_line_start(),
+        KeyCode::Char('$') | KeyCode::End  => app.buffer.goto_line_end(),
+
+        // File
+        KeyCode::Char('g') => app.buffer.goto_file_start(),
+        KeyCode::Char('G') => app.buffer.goto_file_end(),
+
+        // Select line (Helix 'x')
+        KeyCode::Char('x') => app.buffer.select_line(),
+
+        // Edit
+        KeyCode::Char('d') => app.buffer.delete_selection(),
+        KeyCode::Char('c') => app.buffer.change_selection(),
+
+        // Yank / Paste
+        KeyCode::Char('y') => app.buffer.yank(),
+        KeyCode::Char('p') => app.buffer.paste_after(),
+        KeyCode::Char('P') => app.buffer.paste_before(),
+
+        // Undo / Redo
+        KeyCode::Char('u') => app.buffer.undo(),
+        KeyCode::Char('U') => app.buffer.redo(),
+
+        // Search
+        KeyCode::Char('/') => {
+            app.buffer.search_input.clear();
+            app.buffer.mode = EditorMode::Search;
+        }
+        KeyCode::Char('n') => app.buffer.search_next(),
+        KeyCode::Char('N') => app.buffer.search_prev(),
+
+        // Command & focus
+        KeyCode::Char(':') => { app.mode = Mode::Command; }
+        KeyCode::Tab => { app.edit_focus = EditFocus::Sidebar; }
+
+        _ => {}
+    }
+    Action::None
+}
+
+fn handle_editor_insert(app: &mut App, key: KeyEvent) -> Action {
+    match key.code {
+        KeyCode::Esc => { app.buffer.mode = EditorMode::Normal; }
+        KeyCode::Enter    => app.buffer.insert_newline(),
+        KeyCode::Backspace => app.buffer.delete_backward(),
+        KeyCode::Left  => app.buffer.move_cursor(Direction::Backward, 1),
+        KeyCode::Right => app.buffer.move_cursor(Direction::Forward, 1),
+        KeyCode::Up    => app.buffer.move_line(Direction::Backward, 1),
+        KeyCode::Down  => app.buffer.move_line(Direction::Forward, 1),
+        KeyCode::Home  => app.buffer.goto_line_start(),
+        KeyCode::End   => app.buffer.goto_line_end(),
+        KeyCode::Char(ch) => app.buffer.insert_char(ch),
+        _ => {}
+    }
+    Action::None
+}
+
+fn handle_editor_select(app: &mut App, key: KeyEvent) -> Action {
+    match key.code {
+        KeyCode::Esc => {
+            app.buffer.mode = EditorMode::Normal;
+            let pos = app.buffer.cursor_pos();
+            app.buffer.selection = helix_core::selection::Selection::point(pos);
+        }
+
+        // Extend selection with movement
+        KeyCode::Char('h') | KeyCode::Left  => app.buffer.extend_cursor(Direction::Backward, 1),
+        KeyCode::Char('l') | KeyCode::Right => app.buffer.extend_cursor(Direction::Forward, 1),
+        KeyCode::Char('j') | KeyCode::Down  => app.buffer.extend_line(Direction::Forward, 1),
+        KeyCode::Char('k') | KeyCode::Up    => app.buffer.extend_line(Direction::Backward, 1),
+
+        // Word extend
+        KeyCode::Char('w') => app.buffer.word_next(),
+        KeyCode::Char('b') => app.buffer.word_prev(),
+        KeyCode::Char('e') => app.buffer.word_end(),
+
+        // Select line
+        KeyCode::Char('x') => app.buffer.select_line(),
+
+        // Operate on selection
+        KeyCode::Char('d') => {
+            app.buffer.delete_selection();
+            app.buffer.mode = EditorMode::Normal;
+        }
+        KeyCode::Char('c') => app.buffer.change_selection(),
+        KeyCode::Char('y') => {
+            app.buffer.yank();
+            app.buffer.mode = EditorMode::Normal;
+        }
+
+        KeyCode::Char(':') => { app.mode = Mode::Command; }
+        _ => {}
+    }
+    Action::None
+}
+
+fn handle_search(app: &mut App, key: KeyEvent) -> Action {
+    match key.code {
+        KeyCode::Esc => {
+            app.buffer.search_input.clear();
+            app.buffer.mode = EditorMode::Normal;
+        }
+        KeyCode::Enter => {
+            let query = app.buffer.search_input.clone();
+            if query.starts_with('!') {
+                let cmd = query[1..].to_string();
+                if let Err(e) = app.buffer.pipe_selection(&cmd) {
+                    app.push_error(&e);
+                }
+                app.buffer.mode = EditorMode::Normal;
+            } else {
+                app.buffer.search_query = query;
+                app.buffer.search_next();
+                app.buffer.mode = EditorMode::Normal;
+            }
+            app.buffer.search_input.clear();
+        }
+        KeyCode::Backspace => {
+            app.buffer.search_input.pop();
+        }
+        KeyCode::Char(ch) => {
+            app.buffer.search_input.push(ch);
+        }
+        _ => {}
+    }
+    Action::None
+}
+
+// -- Sidebar --
 
 fn handle_sidebar_key(app: &mut App, key: KeyEvent) -> Action {
     match key.code {
@@ -280,6 +364,8 @@ fn handle_sidebar_key(app: &mut App, key: KeyEvent) -> Action {
         _ => Action::None,
     }
 }
+
+// -- Command mode --
 
 fn handle_command(app: &mut App, key: KeyEvent) -> Action {
     match key.code {

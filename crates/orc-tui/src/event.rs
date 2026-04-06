@@ -1,4 +1,4 @@
-use crate::app::App;
+use crate::app::{App, AppView};
 use crate::input::{self, Action};
 use crate::ui;
 
@@ -7,11 +7,13 @@ use orc_bridge::process::ClaudeBridge;
 use crossterm::event::{self, Event, KeyEventKind};
 use crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
 use crossterm::execute;
+use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 use tokio::sync::mpsc;
 
 use std::io;
+use std::path::PathBuf;
 use std::time::Duration;
 
 pub async fn run(mut bridge: ClaudeBridge) -> anyhow::Result<()> {
@@ -36,7 +38,11 @@ async fn run_loop(
 ) -> anyhow::Result<()> {
     let mut app = App::new();
     app.mode = crate::app::Mode::Insert;
-    app.push_system("orc — press Esc for normal mode, :q to quit");
+    app.push_system("orc — press Esc for normal mode, Ctrl+E for editor, :q to quit");
+
+    let (fs_tx, mut fs_rx) = mpsc::unbounded_channel::<PathBuf>();
+
+    let _watcher = setup_file_watcher(fs_tx);
 
     terminal.draw(|f| ui::render(f, &app))?;
 
@@ -45,23 +51,40 @@ async fn run_loop(
             break;
         }
 
-        if event::poll(Duration::from_millis(50))? {
-            if let Event::Key(key) = event::read()? {
-                if key.kind != KeyEventKind::Press {
-                    continue;
-                }
+        // Scroll editor viewport before render
+        if app.view == AppView::Edit {
+            let h = terminal.size()?.height as usize;
+            app.buffer.scroll_to_cursor(h.saturating_sub(4));
+        }
 
-                match input::handle_key(&mut app, key) {
-                    Action::SendMessage(text) => {
-                        send_message(&mut app, bridge, &text, terminal).await?;
+        tokio::select! {
+            _ = tokio::time::sleep(Duration::from_millis(33)) => {
+                // Poll terminal events (non-blocking)
+                while event::poll(Duration::ZERO)? {
+                    if let Event::Key(key) = event::read()? {
+                        if key.kind != KeyEventKind::Press {
+                            continue;
+                        }
+                        match input::handle_key(&mut app, key) {
+                            Action::SendMessage(text) => {
+                                send_message(&mut app, bridge, &text, terminal).await?;
+                            }
+                            Action::ExecuteCommand(cmd) => {
+                                execute_command(&mut app, bridge, &cmd, terminal).await?;
+                            }
+                            Action::Quit => {
+                                app.should_quit = true;
+                            }
+                            Action::None => {}
+                        }
                     }
-                    Action::ExecuteCommand(cmd) => {
-                        execute_command(&mut app, bridge, &cmd, terminal).await?;
+                }
+            }
+            Some(path) = fs_rx.recv() => {
+                if let Some(ref buf_path) = app.buffer.path {
+                    if path == *buf_path {
+                        let _ = app.buffer.reload();
                     }
-                    Action::Quit => {
-                        app.should_quit = true;
-                    }
-                    Action::None => {}
                 }
             }
         }
@@ -70,6 +93,30 @@ async fn run_loop(
     }
 
     Ok(())
+}
+
+fn setup_file_watcher(tx: mpsc::UnboundedSender<PathBuf>) -> Option<RecommendedWatcher> {
+    let cwd = std::env::current_dir().ok()?;
+
+    let mut watcher = RecommendedWatcher::new(
+        move |res: Result<notify::Event, notify::Error>| {
+            if let Ok(event) = res {
+                if matches!(
+                    event.kind,
+                    notify::EventKind::Modify(_) | notify::EventKind::Create(_)
+                ) {
+                    for path in event.paths {
+                        let _ = tx.send(path);
+                    }
+                }
+            }
+        },
+        Config::default(),
+    )
+    .ok()?;
+
+    watcher.watch(&cwd, RecursiveMode::Recursive).ok()?;
+    Some(watcher)
 }
 
 async fn send_message(
