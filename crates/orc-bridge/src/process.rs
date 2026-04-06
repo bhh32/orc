@@ -26,8 +26,23 @@ pub enum BridgeError {
 
 pub enum OrcEvent {
     Text(String),
-    ToolStart { name: String, id: String },
-    ToolEnd { id: String },
+    ToolStart {
+        name: String,
+        id: String,
+        input: serde_json::Value,
+    },
+    ToolInput {
+        id: String,
+        json_chunk: String,
+    },
+    ToolEnd {
+        id: String,
+    },
+    ToolResult {
+        tool_use_id: String,
+        content: String,
+        is_error: bool,
+    },
     TurnComplete {
         result: String,
         input_tokens: u64,
@@ -50,6 +65,7 @@ pub struct ClaudeBridge {
     effort: Option<String>,
     continue_last: bool,
     session: Session,
+    active_tools: std::collections::HashMap<usize, String>,
 }
 
 impl ClaudeBridge {
@@ -60,6 +76,7 @@ impl ClaudeBridge {
             effort: None,
             continue_last: false,
             session: Session::new(),
+            active_tools: std::collections::HashMap::new(),
         }
     }
 
@@ -182,18 +199,31 @@ impl ClaudeBridge {
 
             BridgeEvent::Stream(wrapper) => {
                 match wrapper.event {
-                    StreamEvent::ContentBlockDelta { delta, .. } => {
-                        if let Delta::Text { text } = delta {
-                            let _ = tx.send(OrcEvent::Text(text));
+                    StreamEvent::ContentBlockDelta { index, delta } => {
+                        match delta {
+                            Delta::Text { text } => {
+                                let _ = tx.send(OrcEvent::Text(text));
+                            }
+                            Delta::InputJson { partial_json } => {
+                                if let Some(tool_id) = self.active_tools.get(&index) {
+                                    let _ = tx.send(OrcEvent::ToolInput {
+                                        id: tool_id.clone(),
+                                        json_chunk: partial_json,
+                                    });
+                                }
+                            }
                         }
                     }
-                    StreamEvent::ContentBlockStart { content_block, .. } => {
-                        if let crate::events::ContentBlock::ToolUse { id, name, .. } = content_block {
-                            let _ = tx.send(OrcEvent::ToolStart { name, id });
+                    StreamEvent::ContentBlockStart { index, content_block } => {
+                        if let crate::events::ContentBlock::ToolUse { id, name, input } = content_block {
+                            self.active_tools.insert(index, id.clone());
+                            let _ = tx.send(OrcEvent::ToolStart { name, id, input });
                         }
                     }
-                    StreamEvent::ContentBlockStop { .. } => {
-                        // Tool end events are tracked via result
+                    StreamEvent::ContentBlockStop { index } => {
+                        if let Some(tool_id) = self.active_tools.remove(&index) {
+                            let _ = tx.send(OrcEvent::ToolEnd { id: tool_id });
+                        }
                     }
                     _ => {}
                 }
@@ -219,8 +249,21 @@ impl ClaudeBridge {
                 });
             }
 
-            BridgeEvent::Assistant(_) => {
-                // Full message — already handled via stream events
+            BridgeEvent::Assistant(asst) => {
+                for block in &asst.message.content {
+                    if let crate::events::ContentBlock::ToolResult {
+                        tool_use_id,
+                        content,
+                        is_error,
+                    } = block
+                    {
+                        let _ = tx.send(OrcEvent::ToolResult {
+                            tool_use_id: tool_use_id.clone(),
+                            content: content.clone().unwrap_or_default(),
+                            is_error: is_error.unwrap_or(false),
+                        });
+                    }
+                }
             }
 
             BridgeEvent::RateLimit(rl) => {

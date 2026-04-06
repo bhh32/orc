@@ -3,7 +3,7 @@ use crate::input::{self, Action};
 use crate::theme;
 use crate::ui;
 
-use orc_bridge::process::ClaudeBridge;
+use orc_bridge::process::{ClaudeBridge, OrcEvent};
 
 use crossterm::event::{
     self, DisableMouseCapture, EnableMouseCapture, Event, KeyEventKind,
@@ -18,16 +18,18 @@ use tokio::sync::mpsc;
 
 use std::io;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-pub async fn run(mut bridge: ClaudeBridge) -> anyhow::Result<()> {
+pub async fn run(bridge: ClaudeBridge) -> anyhow::Result<()> {
     terminal::enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let result = run_loop(&mut terminal, &mut bridge).await;
+    let bridge = Arc::new(Mutex::new(bridge));
+    let result = run_loop(&mut terminal, bridge).await;
 
     terminal::disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture)?;
@@ -38,13 +40,14 @@ pub async fn run(mut bridge: ClaudeBridge) -> anyhow::Result<()> {
 
 async fn run_loop(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
-    bridge: &mut ClaudeBridge,
+    bridge: Arc<Mutex<ClaudeBridge>>,
 ) -> anyhow::Result<()> {
     let mut app = App::new();
     app.mode = crate::app::Mode::Insert;
     app.push_system("orc — press Esc for normal mode, Ctrl+E for editor, :q to quit");
 
     let (fs_tx, mut fs_rx) = mpsc::unbounded_channel::<PathBuf>();
+    let (bridge_tx, mut bridge_rx) = mpsc::unbounded_channel::<OrcEvent>();
 
     let _watcher = setup_file_watcher(fs_tx);
 
@@ -55,15 +58,13 @@ async fn run_loop(
             break;
         }
 
-        // Scroll editor viewport before render
         if app.view == AppView::Edit {
             let h = terminal.size()?.height as usize;
             app.buffer.scroll_to_cursor(h.saturating_sub(4));
         }
 
         tokio::select! {
-            _ = tokio::time::sleep(Duration::from_millis(33)) => {
-                // Poll terminal events (non-blocking)
+            _ = tokio::time::sleep(Duration::from_millis(16)) => {
                 while event::poll(Duration::ZERO)? {
                     match event::read()? {
                         Event::Key(key) => {
@@ -72,10 +73,21 @@ async fn run_loop(
                             }
                             match input::handle_key(&mut app, key) {
                                 Action::SendMessage(text) => {
-                                    send_message(&mut app, bridge, &text, terminal).await?;
+                                    app.push_user_message(&text);
+                                    app.streaming = true;
+                                    spawn_bridge_send(
+                                        bridge.clone(),
+                                        text,
+                                        bridge_tx.clone(),
+                                    );
                                 }
                                 Action::ExecuteCommand(cmd) => {
-                                    execute_command(&mut app, bridge, &cmd, terminal).await?;
+                                    execute_command(
+                                        &mut app,
+                                        &bridge,
+                                        &cmd,
+                                        &bridge_tx,
+                                    );
                                 }
                                 Action::Quit => {
                                     app.should_quit = true;
@@ -90,6 +102,9 @@ async fn run_loop(
                     }
                 }
             }
+            Some(event) = bridge_rx.recv() => {
+                app.handle_bridge_event(event);
+            }
             Some(path) = fs_rx.recv() => {
                 if let Some(ref buf_path) = app.buffer.path {
                     if path == *buf_path {
@@ -103,6 +118,57 @@ async fn run_loop(
     }
 
     Ok(())
+}
+
+fn spawn_bridge_send(
+    bridge: Arc<Mutex<ClaudeBridge>>,
+    prompt: String,
+    tx: mpsc::UnboundedSender<OrcEvent>,
+) {
+    tokio::spawn(async move {
+        // Take bridge out of mutex for the duration of the async send,
+        // replace with a temporary. This allows the event loop to continue.
+        let mut taken = {
+            let mut guard = bridge.lock().unwrap();
+            let cwd = std::env::current_dir().unwrap_or_default();
+            let mut tmp = ClaudeBridge::new(cwd);
+            std::mem::swap(&mut *guard, &mut tmp);
+            tmp
+        };
+
+        let result = taken.send(&prompt, &tx).await;
+
+        // Put the bridge back
+        {
+            let mut guard = bridge.lock().unwrap();
+            std::mem::swap(&mut *guard, &mut taken);
+        }
+
+        if let Err(e) = result {
+            let _ = tx.send(OrcEvent::Error(e.to_string()));
+        }
+    });
+}
+
+fn handle_mouse(app: &mut App, mouse: MouseEvent) {
+    match mouse.kind {
+        MouseEventKind::ScrollUp => {
+            app.scroll_offset = app.scroll_offset.saturating_sub(3);
+        }
+        MouseEventKind::ScrollDown => {
+            app.scroll_offset = app.scroll_offset.saturating_add(3);
+        }
+        MouseEventKind::Down(MouseButton::Left) => {
+            if app.view == AppView::Edit {
+                if mouse.column < 22 {
+                    app.edit_focus = EditFocus::Sidebar;
+                } else {
+                    app.edit_focus = EditFocus::Editor;
+                }
+            }
+        }
+        _ => {}
+    }
 }
 
 fn setup_file_watcher(tx: mpsc::UnboundedSender<PathBuf>) -> Option<RecommendedWatcher> {
@@ -129,70 +195,12 @@ fn setup_file_watcher(tx: mpsc::UnboundedSender<PathBuf>) -> Option<RecommendedW
     Some(watcher)
 }
 
-fn handle_mouse(app: &mut App, mouse: MouseEvent) {
-    match mouse.kind {
-        MouseEventKind::ScrollUp => {
-            app.scroll_offset = app.scroll_offset.saturating_sub(3);
-        }
-        MouseEventKind::ScrollDown => {
-            app.scroll_offset = app.scroll_offset.saturating_add(3);
-        }
-        MouseEventKind::Down(MouseButton::Left) => {
-            if app.view == AppView::Edit {
-                if mouse.column < 22 {
-                    app.edit_focus = EditFocus::Sidebar;
-                } else {
-                    app.edit_focus = EditFocus::Editor;
-                }
-            }
-        }
-        _ => {}
-    }
-}
-
-async fn send_message(
+fn execute_command(
     app: &mut App,
-    bridge: &mut ClaudeBridge,
-    text: &str,
-    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
-) -> anyhow::Result<()> {
-    app.push_user_message(text);
-    app.streaming = true;
-    terminal.draw(|f| ui::render(f, app))?;
-
-    let (tx, mut rx) = mpsc::unbounded_channel();
-
-    let send_fut = bridge.send(text, &tx);
-    tokio::pin!(send_fut);
-
-    loop {
-        tokio::select! {
-            result = &mut send_fut => {
-                while let Ok(ev) = rx.try_recv() {
-                    app.handle_bridge_event(ev);
-                }
-                if let Err(e) = result {
-                    app.push_error(&e.to_string());
-                }
-                app.streaming = false;
-                break;
-            }
-            Some(ev) = rx.recv() => {
-                app.handle_bridge_event(ev);
-                terminal.draw(|f| ui::render(f, app))?;
-            }
-        }
-    }
-
-    Ok(())
-}
-
-async fn execute_command(
-    app: &mut App,
-    bridge: &mut ClaudeBridge,
+    bridge: &Arc<Mutex<ClaudeBridge>>,
     cmd: &str,
-    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
-) -> anyhow::Result<()> {
+    bridge_tx: &mpsc::UnboundedSender<OrcEvent>,
+) {
     let parts: Vec<&str> = cmd.splitn(2, char::is_whitespace).collect();
     let name = parts[0];
     let arg = parts.get(1).unwrap_or(&"").trim();
@@ -206,7 +214,7 @@ async fn execute_command(
                 let cur = app.model.as_deref().unwrap_or("default");
                 app.push_system(&format!("model: {cur}"));
             } else {
-                bridge.set_model(arg.to_string());
+                bridge.lock().unwrap().set_model(arg.to_string());
                 app.model = Some(arg.to_string());
                 app.push_system(&format!("model set to: {arg}"));
             }
@@ -215,7 +223,7 @@ async fn execute_command(
             if arg.is_empty() {
                 app.push_system("usage: :effort <low|medium|high|max>");
             } else {
-                bridge.set_effort(arg.to_string());
+                bridge.lock().unwrap().set_effort(arg.to_string());
                 app.push_system(&format!("effort set to: {arg}"));
             }
         }
@@ -250,9 +258,9 @@ async fn execute_command(
         }
         _ => {
             let full = format!("/{cmd}");
-            send_message(app, bridge, &full, terminal).await?;
+            app.push_user_message(&full);
+            app.streaming = true;
+            spawn_bridge_send(bridge.clone(), full, bridge_tx.clone());
         }
     }
-
-    Ok(())
 }

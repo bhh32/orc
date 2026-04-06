@@ -42,11 +42,17 @@ pub struct ChatMessage {
     pub content: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ChatRole {
     User,
     Assistant,
-    Tool,
+    ToolUse {
+        name: String,
+        input: serde_json::Value,
+    },
+    ToolResult {
+        is_error: bool,
+    },
     System,
     Error,
 }
@@ -150,10 +156,21 @@ impl App {
         });
     }
 
-    pub fn push_tool_message(&mut self, name: &str) {
+    pub fn push_tool_use(&mut self, name: &str, input: serde_json::Value) {
+        let summary = tool_summary(name, &input);
         self.messages.push(ChatMessage {
-            role: ChatRole::Tool,
-            content: format!("[{name}]"),
+            role: ChatRole::ToolUse {
+                name: name.to_string(),
+                input,
+            },
+            content: summary,
+        });
+    }
+
+    pub fn push_tool_result(&mut self, content: &str, is_error: bool) {
+        self.messages.push(ChatMessage {
+            role: ChatRole::ToolResult { is_error },
+            content: content.to_string(),
         });
     }
 
@@ -177,10 +194,16 @@ impl App {
                 self.streaming = true;
                 self.append_assistant_text(&text);
             }
-            OrcEvent::ToolStart { name, .. } => {
-                self.push_tool_message(&name);
+            OrcEvent::ToolStart { name, input, .. } => {
+                self.push_tool_use(&name, input);
             }
+            OrcEvent::ToolInput { .. } => {}
             OrcEvent::ToolEnd { .. } => {}
+            OrcEvent::ToolResult { content, is_error, .. } => {
+                if !content.is_empty() {
+                    self.push_tool_result(&content, is_error);
+                }
+            }
             OrcEvent::TurnComplete { input_tokens, output_tokens, cost_usd, turns, .. } => {
                 self.streaming = false;
                 self.input_tokens += input_tokens;
@@ -256,4 +279,48 @@ fn prev_char_boundary(s: &str, pos: usize) -> usize {
         idx -= 1;
     }
     idx
+}
+
+fn tool_summary(name: &str, input: &serde_json::Value) -> String {
+    let get = |key: &str| input.get(key).and_then(|v| v.as_str()).unwrap_or("");
+
+    match name {
+        "Read" => {
+            let path = get("file_path");
+            if path.is_empty() { name.to_string() } else { path.to_string() }
+        }
+        "Write" => {
+            let path = get("file_path");
+            if path.is_empty() { name.to_string() } else { path.to_string() }
+        }
+        "Edit" => {
+            let path = get("file_path");
+            if path.is_empty() { name.to_string() } else { path.to_string() }
+        }
+        "Bash" => {
+            let cmd = get("command");
+            if cmd.is_empty() { name.to_string() } else { truncate(cmd, 80) }
+        }
+        "Glob" => {
+            let pat = get("pattern");
+            if pat.is_empty() { name.to_string() } else { pat.to_string() }
+        }
+        "Grep" => {
+            let pat = get("pattern");
+            if pat.is_empty() { name.to_string() } else { pat.to_string() }
+        }
+        "Agent" => {
+            let desc = get("description");
+            if desc.is_empty() { name.to_string() } else { desc.to_string() }
+        }
+        _ => name.to_string(),
+    }
+}
+
+fn truncate(s: &str, max: usize) -> String {
+    if s.len() <= max {
+        s.to_string()
+    } else {
+        format!("{}…", &s[..max])
+    }
 }
