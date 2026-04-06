@@ -12,6 +12,11 @@ pub enum Action {
 }
 
 pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
+    // Picker intercepts all input when visible
+    if app.picker.visible {
+        return handle_picker(app, key);
+    }
+
     if key.modifiers.contains(KeyModifiers::CONTROL) {
         match key.code {
             KeyCode::Char('e') => {
@@ -27,6 +32,35 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
         AppView::Chat => handle_chat_key(app, key),
         AppView::Edit => handle_edit_key(app, key),
     }
+}
+
+fn handle_picker(app: &mut App, key: KeyEvent) -> Action {
+    match key.code {
+        KeyCode::Esc => {
+            app.picker.close();
+        }
+        KeyCode::Enter => {
+            if let Some(path) = app.picker.selected_path() {
+                let cwd = std::env::current_dir().unwrap_or_default();
+                let full = cwd.join(path);
+                app.open_file(&full);
+                app.view = AppView::Edit;
+            }
+            app.picker.close();
+        }
+        KeyCode::Up | KeyCode::Char('k') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            app.picker.move_up();
+        }
+        KeyCode::Down | KeyCode::Char('j') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            app.picker.move_down();
+        }
+        KeyCode::Up => app.picker.move_up(),
+        KeyCode::Down => app.picker.move_down(),
+        KeyCode::Backspace => app.picker.backspace(),
+        KeyCode::Char(ch) => app.picker.type_char(ch),
+        _ => {}
+    }
+    Action::None
 }
 
 // -- Chat mode --
@@ -234,6 +268,15 @@ fn handle_editor_normal(app: &mut App, key: KeyEvent) -> Action {
         }
         KeyCode::Char('n') => app.buffer.search_next(),
         KeyCode::Char('N') => app.buffer.search_prev(),
+
+        // File picker (Space+f)
+        KeyCode::Char(' ') => {
+            // Helix space menu — for now just 'f' is handled inline
+            // We consume space and wait for next key, but since we can't
+            // buffer keys easily, open picker directly on space
+            let cwd = std::env::current_dir().unwrap_or_default();
+            app.picker.open(&cwd);
+        }
 
         // Command & focus
         KeyCode::Char(':') => { app.mode = Mode::Command; }

@@ -107,6 +107,10 @@ impl App {
         self.view = match self.view {
             AppView::Chat => {
                 self.mode = Mode::Normal;
+                if self.buffer.path.is_none() {
+                    let cwd = env::current_dir().unwrap_or_default();
+                    self.picker.open(&cwd);
+                }
                 AppView::Edit
             }
             AppView::Edit => {
