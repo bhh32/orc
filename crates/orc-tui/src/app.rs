@@ -193,9 +193,11 @@ impl App {
             OrcEvent::Text(text) => {
                 self.streaming = true;
                 self.append_assistant_text(&text);
+                self.scroll_offset = u16::MAX;
             }
             OrcEvent::ToolStart { name, input, .. } => {
                 self.push_tool_use(&name, input);
+                self.scroll_offset = u16::MAX;
             }
             OrcEvent::ToolInput { .. } => {}
             OrcEvent::ToolEnd { .. } => {}
