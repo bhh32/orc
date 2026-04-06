@@ -28,6 +28,14 @@ pub struct SystemEvent {
     pub tools: Vec<String>,
     #[serde(default)]
     pub model: Option<String>,
+    #[serde(default)]
+    pub slash_commands: Vec<String>,
+    #[serde(default)]
+    pub skills: Vec<String>,
+    #[serde(default)]
+    pub plugins: Vec<String>,
+    #[serde(default)]
+    pub agents: Vec<String>,
     #[serde(flatten)]
     pub extra: Value,
 }

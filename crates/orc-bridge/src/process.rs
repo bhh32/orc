@@ -39,6 +39,7 @@ pub enum OrcEvent {
         session_id: String,
         model: String,
         tools: Vec<String>,
+        slash_commands: Vec<String>,
     },
     Error(String),
 }
@@ -211,12 +212,22 @@ impl ClaudeBridge {
             "init" => {
                 if let Some(ref sid) = sys.session_id {
                     let model = sys.model.clone().unwrap_or_default();
-                    self.session.update_from_init(sid, sys.model.as_deref(), sys.tools.clone());
+                    let slash_commands = sys.slash_commands.clone();
+                    self.session.update_from_init(
+                        sid,
+                        sys.model.as_deref(),
+                        sys.tools.clone(),
+                        sys.slash_commands.clone(),
+                        sys.skills.clone(),
+                        sys.plugins.clone(),
+                        sys.agents.clone(),
+                    );
 
                     let _ = tx.send(OrcEvent::SessionInit {
                         session_id: sid.clone(),
                         model,
                         tools: sys.tools,
+                        slash_commands,
                     });
                 }
             }

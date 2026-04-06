@@ -1,10 +1,8 @@
 pub enum SlashCommand {
-    Help,
-    Clear,
-    Compact,
-    Status,
     Exit,
-    Unknown(String),
+    Status,
+    Help,
+    Passthrough(String),
 }
 
 pub fn parse(input: &str) -> Option<SlashCommand> {
@@ -15,21 +13,25 @@ pub fn parse(input: &str) -> Option<SlashCommand> {
 
     let cmd = trimmed.split_whitespace().next().unwrap_or("");
     match cmd {
-        "/help" => Some(SlashCommand::Help),
-        "/clear" => Some(SlashCommand::Clear),
-        "/compact" => Some(SlashCommand::Compact),
-        "/status" => Some(SlashCommand::Status),
         "/exit" | "/quit" => Some(SlashCommand::Exit),
-        other => Some(SlashCommand::Unknown(other.to_string())),
+        "/status" => Some(SlashCommand::Status),
+        "/help" => Some(SlashCommand::Help),
+        _ => Some(SlashCommand::Passthrough(trimmed.to_string())),
     }
 }
 
-pub fn print_help() {
-    println!("\n  Available commands:");
-    println!("    /help     Show this help message");
-    println!("    /clear    Clear conversation history");
-    println!("    /compact  Summarize and compact conversation");
-    println!("    /status   Show git status and token usage");
+pub fn print_help(available: &[String]) {
+    println!("\n  orc commands:");
     println!("    /exit     Exit orc");
+    println!("    /status   Show session stats");
+    println!("    /help     Show this help");
+
+    if !available.is_empty() {
+        println!("\n  Claude Code commands:");
+        for cmd in available {
+            println!("    /{cmd}");
+        }
+    }
+
     println!();
 }
