@@ -1,10 +1,28 @@
+use crate::panes::editor::Buffer;
+use crate::panes::sidebar::FileTree;
+
 use orc_bridge::process::OrcEvent;
+
+use std::env;
+use std::path::Path;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AppView {
+    Chat,
+    Edit,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
     Normal,
     Insert,
     Command,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EditFocus {
+    Sidebar,
+    Editor,
 }
 
 impl Mode {
@@ -33,6 +51,7 @@ pub enum ChatRole {
 }
 
 pub struct App {
+    pub view: AppView,
     pub mode: Mode,
     pub messages: Vec<ChatMessage>,
     pub input: String,
@@ -49,11 +68,16 @@ pub struct App {
     pub streaming: bool,
     pub should_quit: bool,
     pub available_commands: Vec<String>,
+    pub buffer: Buffer,
+    pub sidebar: FileTree,
+    pub edit_focus: EditFocus,
 }
 
 impl App {
     pub fn new() -> Self {
+        let cwd = env::current_dir().unwrap_or_default();
         Self {
+            view: AppView::Chat,
             mode: Mode::Normal,
             messages: Vec::new(),
             input: String::new(),
@@ -70,6 +94,32 @@ impl App {
             streaming: false,
             should_quit: false,
             available_commands: Vec::new(),
+            buffer: Buffer::new(),
+            sidebar: FileTree::from_dir(&cwd),
+            edit_focus: EditFocus::Editor,
+        }
+    }
+
+    pub fn toggle_view(&mut self) {
+        self.view = match self.view {
+            AppView::Chat => {
+                self.mode = Mode::Normal;
+                AppView::Edit
+            }
+            AppView::Edit => {
+                self.mode = Mode::Insert;
+                AppView::Chat
+            }
+        };
+    }
+
+    pub fn open_file(&mut self, path: &Path) {
+        match Buffer::from_file(path) {
+            Ok(buf) => {
+                self.buffer = buf;
+                self.edit_focus = EditFocus::Editor;
+            }
+            Err(e) => self.push_error(&format!("failed to open {}: {e}", path.display())),
         }
     }
 

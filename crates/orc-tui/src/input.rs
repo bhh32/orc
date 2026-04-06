@@ -1,6 +1,8 @@
-use crate::app::{App, Mode};
+use crate::app::{App, AppView, EditFocus, Mode};
+use crate::panes::editor::EditorMode;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use helix_core::movement::Direction;
 
 pub enum Action {
     None,
@@ -10,14 +12,43 @@ pub enum Action {
 }
 
 pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
+    if key.modifiers.contains(KeyModifiers::CONTROL) {
+        match key.code {
+            KeyCode::Char('e') => {
+                app.toggle_view();
+                return Action::None;
+            }
+            KeyCode::Char('d') => return Action::Quit,
+            _ => {}
+        }
+    }
+
+    match app.view {
+        AppView::Chat => handle_chat_key(app, key),
+        AppView::Edit => handle_edit_key(app, key),
+    }
+}
+
+fn handle_chat_key(app: &mut App, key: KeyEvent) -> Action {
     match app.mode {
-        Mode::Normal => handle_normal(app, key),
-        Mode::Insert => handle_insert(app, key),
+        Mode::Normal => handle_chat_normal(app, key),
+        Mode::Insert => handle_chat_insert(app, key),
         Mode::Command => handle_command(app, key),
     }
 }
 
-fn handle_normal(app: &mut App, key: KeyEvent) -> Action {
+fn handle_edit_key(app: &mut App, key: KeyEvent) -> Action {
+    if app.mode == Mode::Command {
+        return handle_command(app, key);
+    }
+
+    match app.edit_focus {
+        EditFocus::Sidebar => handle_sidebar_key(app, key),
+        EditFocus::Editor => handle_editor_key(app, key),
+    }
+}
+
+fn handle_chat_normal(app: &mut App, key: KeyEvent) -> Action {
     match key.code {
         KeyCode::Char('i') => {
             app.mode = Mode::Insert;
@@ -48,7 +79,7 @@ fn handle_normal(app: &mut App, key: KeyEvent) -> Action {
     }
 }
 
-fn handle_insert(app: &mut App, key: KeyEvent) -> Action {
+fn handle_chat_insert(app: &mut App, key: KeyEvent) -> Action {
     match key.code {
         KeyCode::Esc => {
             app.mode = Mode::Normal;
@@ -98,10 +129,152 @@ fn handle_insert(app: &mut App, key: KeyEvent) -> Action {
             Action::None
         }
         KeyCode::Char(ch) => {
-            if key.modifiers.contains(KeyModifiers::CONTROL) && ch == 'd' {
-                return Action::Quit;
-            }
             app.insert_char(ch);
+            Action::None
+        }
+        _ => Action::None,
+    }
+}
+
+fn handle_editor_key(app: &mut App, key: KeyEvent) -> Action {
+    let buf = &mut app.buffer;
+
+    match buf.mode {
+        EditorMode::Normal => match key.code {
+            KeyCode::Char('i') => {
+                buf.mode = EditorMode::Insert;
+                Action::None
+            }
+            KeyCode::Char('a') => {
+                buf.move_cursor(Direction::Forward, 1);
+                buf.mode = EditorMode::Insert;
+                Action::None
+            }
+            KeyCode::Char('v') => {
+                buf.mode = EditorMode::Select;
+                Action::None
+            }
+            KeyCode::Char('h') | KeyCode::Left => {
+                buf.move_cursor(Direction::Backward, 1);
+                Action::None
+            }
+            KeyCode::Char('l') | KeyCode::Right => {
+                buf.move_cursor(Direction::Forward, 1);
+                Action::None
+            }
+            KeyCode::Char('j') | KeyCode::Down => {
+                buf.move_line(Direction::Forward, 1);
+                Action::None
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                buf.move_line(Direction::Backward, 1);
+                Action::None
+            }
+            KeyCode::Char('d') => {
+                buf.delete_selection();
+                Action::None
+            }
+            KeyCode::Char(':') => {
+                app.mode = Mode::Command;
+                Action::None
+            }
+            KeyCode::Tab => {
+                app.edit_focus = EditFocus::Sidebar;
+                Action::None
+            }
+            _ => Action::None,
+        },
+        EditorMode::Insert => match key.code {
+            KeyCode::Esc => {
+                buf.mode = EditorMode::Normal;
+                Action::None
+            }
+            KeyCode::Enter => {
+                buf.insert_newline();
+                Action::None
+            }
+            KeyCode::Backspace => {
+                buf.delete_backward();
+                Action::None
+            }
+            KeyCode::Left => {
+                buf.move_cursor(Direction::Backward, 1);
+                Action::None
+            }
+            KeyCode::Right => {
+                buf.move_cursor(Direction::Forward, 1);
+                Action::None
+            }
+            KeyCode::Up => {
+                buf.move_line(Direction::Backward, 1);
+                Action::None
+            }
+            KeyCode::Down => {
+                buf.move_line(Direction::Forward, 1);
+                Action::None
+            }
+            KeyCode::Char(ch) => {
+                buf.insert_char(ch);
+                Action::None
+            }
+            _ => Action::None,
+        },
+        EditorMode::Select => match key.code {
+            KeyCode::Esc => {
+                buf.mode = EditorMode::Normal;
+                Action::None
+            }
+            KeyCode::Char('d') => {
+                buf.delete_selection();
+                buf.mode = EditorMode::Normal;
+                Action::None
+            }
+            KeyCode::Char('h') | KeyCode::Left => {
+                buf.move_cursor(Direction::Backward, 1);
+                Action::None
+            }
+            KeyCode::Char('l') | KeyCode::Right => {
+                buf.move_cursor(Direction::Forward, 1);
+                Action::None
+            }
+            KeyCode::Char('j') | KeyCode::Down => {
+                buf.move_line(Direction::Forward, 1);
+                Action::None
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                buf.move_line(Direction::Backward, 1);
+                Action::None
+            }
+            _ => Action::None,
+        },
+    }
+}
+
+fn handle_sidebar_key(app: &mut App, key: KeyEvent) -> Action {
+    match key.code {
+        KeyCode::Char('j') | KeyCode::Down => {
+            app.sidebar.move_down();
+            Action::None
+        }
+        KeyCode::Char('k') | KeyCode::Up => {
+            app.sidebar.move_up();
+            Action::None
+        }
+        KeyCode::Enter => {
+            if app.sidebar.selected_is_file() {
+                if let Some(path) = app.sidebar.selected_path() {
+                    let path = path.to_path_buf();
+                    app.open_file(&path);
+                }
+            }
+            Action::None
+        }
+        KeyCode::Tab => {
+            app.edit_focus = EditFocus::Editor;
+            Action::None
+        }
+        KeyCode::Char(':') => {
+            app.mode = Mode::Command;
             Action::None
         }
         _ => Action::None,

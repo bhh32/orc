@@ -148,6 +148,17 @@ async fn execute_command(
             );
             app.push_system(&msg);
         }
+        "w" | "write" => {
+            match app.buffer.save() {
+                Ok(()) => app.push_system("saved"),
+                Err(e) => app.push_error(&format!("save failed: {e}")),
+            }
+        }
+        "open" | "o" if !arg.is_empty() => {
+            let path = std::path::PathBuf::from(arg);
+            app.open_file(&path);
+            app.view = crate::app::AppView::Edit;
+        }
         _ => {
             let full = format!("/{cmd}");
             send_message(app, bridge, &full, terminal).await?;
