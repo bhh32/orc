@@ -165,6 +165,11 @@ pub fn statusline_mode_command() -> Style {
     Style::default().fg(t.crust).bg(t.mauve).add_modifier(Modifier::BOLD)
 }
 
+pub fn statusline_mode_select() -> Style {
+    let t = current_theme().read().unwrap();
+    Style::default().fg(t.crust).bg(t.yellow).add_modifier(Modifier::BOLD)
+}
+
 pub fn chat_user() -> Style {
     let t = current_theme().read().unwrap();
     Style::default().fg(t.blue).add_modifier(Modifier::BOLD)

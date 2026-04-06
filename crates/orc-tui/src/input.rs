@@ -292,6 +292,8 @@ fn handle_editor_insert(app: &mut App, key: KeyEvent) -> Action {
         KeyCode::Esc => { app.buffer.mode = EditorMode::Normal; }
         KeyCode::Enter    => app.buffer.insert_newline(),
         KeyCode::Backspace => app.buffer.delete_backward(),
+        KeyCode::Delete => app.buffer.delete_forward(),
+        KeyCode::Tab => app.buffer.insert_char('\t'),
         KeyCode::Left  => app.buffer.move_cursor(Direction::Backward, 1),
         KeyCode::Right => app.buffer.move_cursor(Direction::Forward, 1),
         KeyCode::Up    => app.buffer.move_line(Direction::Backward, 1),
@@ -319,12 +321,12 @@ fn handle_editor_select(app: &mut App, key: KeyEvent) -> Action {
         KeyCode::Char('k') | KeyCode::Up    => app.buffer.extend_line(Direction::Backward, 1),
 
         // Word extend
-        KeyCode::Char('w') => app.buffer.word_next(),
-        KeyCode::Char('b') => app.buffer.word_prev(),
-        KeyCode::Char('e') => app.buffer.word_end(),
+        KeyCode::Char('w') => app.buffer.extend_word_next(),
+        KeyCode::Char('b') => app.buffer.extend_word_prev(),
+        KeyCode::Char('e') => app.buffer.extend_word_end(),
 
         // Select line
-        KeyCode::Char('x') => app.buffer.select_line(),
+        KeyCode::Char('x') => app.buffer.extend_select_line(),
 
         // Operate on selection
         KeyCode::Char('d') => {

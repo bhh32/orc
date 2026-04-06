@@ -231,6 +231,43 @@ impl Buffer {
         self.selection = Selection::single(start, end);
     }
 
+    pub fn extend_word_next(&mut self) {
+        let text = self.rope.slice(..);
+        let range = self.selection.primary();
+        let new = movement::move_next_word_start(text, range, 1);
+        self.selection = Selection::single(range.anchor, new.head);
+    }
+
+    pub fn extend_word_prev(&mut self) {
+        let text = self.rope.slice(..);
+        let range = self.selection.primary();
+        let new = movement::move_prev_word_start(text, range, 1);
+        self.selection = Selection::single(range.anchor, new.head);
+    }
+
+    pub fn extend_word_end(&mut self) {
+        let text = self.rope.slice(..);
+        let range = self.selection.primary();
+        let new = movement::move_next_word_end(text, range, 1);
+        self.selection = Selection::single(range.anchor, new.head);
+    }
+
+    pub fn extend_select_line(&mut self) {
+        let anchor = self.selection.primary().anchor;
+        let line = self.cursor_line();
+        let end = if line + 1 < self.line_count() {
+            self.rope.line_to_char(line + 1)
+        } else {
+            self.rope.len_chars()
+        };
+        self.selection = Selection::single(anchor, end);
+    }
+
+    pub fn collapse_selection(&mut self) {
+        let pos = self.cursor_pos();
+        self.selection = Selection::point(pos);
+    }
+
     // Editing
 
     pub fn insert_char(&mut self, ch: char) {
@@ -261,6 +298,21 @@ impl Buffer {
         self.history.commit_revision(&txn, &state);
         if txn.apply(&mut self.rope) {
             self.selection = Selection::point(prev);
+            self.modified = true;
+        }
+    }
+
+    pub fn delete_forward(&mut self) {
+        let pos = self.cursor_pos();
+        if pos >= self.rope.len_chars() {
+            return;
+        }
+        let next = graphemes::next_grapheme_boundary(self.rope.slice(..), pos);
+        let state = self.state();
+        let txn = Transaction::delete_by_selection(&self.rope, &self.selection, |_| (pos, next));
+        self.history.commit_revision(&txn, &state);
+        if txn.apply(&mut self.rope) {
+            self.selection = Selection::point(pos);
             self.modified = true;
         }
     }

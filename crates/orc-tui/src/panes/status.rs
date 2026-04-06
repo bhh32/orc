@@ -18,7 +18,7 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
     let mode_style = match mode_label {
         "NOR" => theme::statusline_mode_normal(),
         "INS" => theme::statusline_mode_insert(),
-        "SEL" => theme::statusline_mode_command(),
+        "SEL" => theme::statusline_mode_select(),
         "CMD" => theme::statusline_mode_command(),
         _ => theme::statusline(),
     };

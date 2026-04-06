@@ -1,10 +1,14 @@
-use crate::app::{App, AppView};
+use crate::app::{App, AppView, EditFocus};
 use crate::input::{self, Action};
+use crate::theme;
 use crate::ui;
 
 use orc_bridge::process::ClaudeBridge;
 
-use crossterm::event::{self, Event, KeyEventKind};
+use crossterm::event::{
+    self, DisableMouseCapture, EnableMouseCapture, Event, KeyEventKind,
+    MouseButton, MouseEvent, MouseEventKind,
+};
 use crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
 use crossterm::execute;
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
@@ -19,14 +23,14 @@ use std::time::Duration;
 pub async fn run(mut bridge: ClaudeBridge) -> anyhow::Result<()> {
     terminal::enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
     let result = run_loop(&mut terminal, &mut bridge).await;
 
     terminal::disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture)?;
     terminal.show_cursor()?;
 
     result
@@ -61,22 +65,28 @@ async fn run_loop(
             _ = tokio::time::sleep(Duration::from_millis(33)) => {
                 // Poll terminal events (non-blocking)
                 while event::poll(Duration::ZERO)? {
-                    if let Event::Key(key) = event::read()? {
-                        if key.kind != KeyEventKind::Press {
-                            continue;
+                    match event::read()? {
+                        Event::Key(key) => {
+                            if key.kind != KeyEventKind::Press {
+                                continue;
+                            }
+                            match input::handle_key(&mut app, key) {
+                                Action::SendMessage(text) => {
+                                    send_message(&mut app, bridge, &text, terminal).await?;
+                                }
+                                Action::ExecuteCommand(cmd) => {
+                                    execute_command(&mut app, bridge, &cmd, terminal).await?;
+                                }
+                                Action::Quit => {
+                                    app.should_quit = true;
+                                }
+                                Action::None => {}
+                            }
                         }
-                        match input::handle_key(&mut app, key) {
-                            Action::SendMessage(text) => {
-                                send_message(&mut app, bridge, &text, terminal).await?;
-                            }
-                            Action::ExecuteCommand(cmd) => {
-                                execute_command(&mut app, bridge, &cmd, terminal).await?;
-                            }
-                            Action::Quit => {
-                                app.should_quit = true;
-                            }
-                            Action::None => {}
+                        Event::Mouse(mouse) => {
+                            handle_mouse(&mut app, mouse);
                         }
+                        _ => {}
                     }
                 }
             }
@@ -117,6 +127,27 @@ fn setup_file_watcher(tx: mpsc::UnboundedSender<PathBuf>) -> Option<RecommendedW
 
     watcher.watch(&cwd, RecursiveMode::Recursive).ok()?;
     Some(watcher)
+}
+
+fn handle_mouse(app: &mut App, mouse: MouseEvent) {
+    match mouse.kind {
+        MouseEventKind::ScrollUp => {
+            app.scroll_offset = app.scroll_offset.saturating_sub(3);
+        }
+        MouseEventKind::ScrollDown => {
+            app.scroll_offset = app.scroll_offset.saturating_add(3);
+        }
+        MouseEventKind::Down(MouseButton::Left) => {
+            if app.view == AppView::Edit {
+                if mouse.column < 22 {
+                    app.edit_focus = EditFocus::Sidebar;
+                } else {
+                    app.edit_focus = EditFocus::Editor;
+                }
+            }
+        }
+        _ => {}
+    }
 }
 
 async fn send_message(
@@ -194,6 +225,17 @@ async fn execute_command(
                 app.cost_usd, app.input_tokens, app.output_tokens, app.turns,
             );
             app.push_system(&msg);
+        }
+        "theme" => {
+            if arg.is_empty() {
+                let names = theme::available_themes().join(", ");
+                app.push_system(&format!("themes: {names}"));
+            } else if theme::set_theme(arg) {
+                app.push_system(&format!("theme set to: {arg}"));
+            } else {
+                let names = theme::available_themes().join(", ");
+                app.push_error(&format!("unknown theme: {arg} (available: {names})"));
+            }
         }
         "w" | "write" => {
             match app.buffer.save() {
