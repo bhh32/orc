@@ -1,4 +1,5 @@
 use crate::panes::editor::Buffer;
+use crate::panes::picker::FilePicker;
 use crate::panes::sidebar::FileTree;
 
 use orc_bridge::process::OrcEvent;
@@ -71,6 +72,7 @@ pub struct App {
     pub buffer: Buffer,
     pub sidebar: FileTree,
     pub edit_focus: EditFocus,
+    pub picker: FilePicker,
 }
 
 impl App {
@@ -97,6 +99,7 @@ impl App {
             buffer: Buffer::new(),
             sidebar: FileTree::from_dir(&cwd),
             edit_focus: EditFocus::Editor,
+            picker: FilePicker::new(),
         }
     }
 

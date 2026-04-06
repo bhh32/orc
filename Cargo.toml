@@ -38,9 +38,14 @@ crossterm = "0.28"
 reedline = "0.38"
 ratatui = { version = "0.30", default-features = false, features = ["crossterm"] }
 
+# Filesystem
+notify = { version = "7", default-features = false, features = ["macos_kqueue"] }
+
+# Syntax
+syntect = "5"
+
 # Misc
 dirs = "6"
-notify = { version = "7", default-features = false, features = ["macos_kqueue"] }
 
 # Internal crates
 orc-bridge = { path = "crates/orc-bridge" }

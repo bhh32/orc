@@ -1,5 +1,5 @@
 use crate::app::{App, AppView, EditFocus};
-use crate::panes::{chat, editor, input, sidebar, status};
+use crate::panes::{chat, editor, input, picker, sidebar, status};
 use crate::theme;
 
 use ratatui::layout::{Constraint, Layout};
@@ -9,12 +9,16 @@ use ratatui::Frame;
 pub fn render(f: &mut Frame, app: &App) {
     let area = f.area();
 
-    let bg = Block::default().style(ratatui::style::Style::default().bg(theme::BASE));
+    let bg = Block::default().style(ratatui::style::Style::default().bg(theme::base()));
     f.render_widget(bg, area);
 
     match app.view {
         AppView::Chat => render_chat_view(f, app),
         AppView::Edit => render_edit_view(f, app),
+    }
+
+    if app.picker.visible {
+        picker::render(f, &app.picker);
     }
 }
 
