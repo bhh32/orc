@@ -1,14 +1,11 @@
-use crate::app::{App, AppView, EditFocus};
+use crate::app::{App, AppView};
 use crate::input::{self, Action};
 use crate::theme;
 use crate::ui;
 
 use orc_bridge::process::{ClaudeBridge, OrcEvent};
 
-use crossterm::event::{
-    self, DisableMouseCapture, EnableMouseCapture, Event, KeyEventKind,
-    MouseButton, MouseEvent, MouseEventKind,
-};
+use crossterm::event::{self, Event, KeyEventKind};
 use crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
 use crossterm::execute;
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
@@ -24,7 +21,7 @@ use std::time::Duration;
 pub async fn run(bridge: ClaudeBridge) -> anyhow::Result<()> {
     terminal::enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    execute!(stdout, EnterAlternateScreen)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
@@ -32,7 +29,7 @@ pub async fn run(bridge: ClaudeBridge) -> anyhow::Result<()> {
     let result = run_loop(&mut terminal, bridge).await;
 
     terminal::disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture)?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
     terminal.show_cursor()?;
 
     result
@@ -95,9 +92,7 @@ async fn run_loop(
                                 Action::None => {}
                             }
                         }
-                        Event::Mouse(mouse) => {
-                            handle_mouse(&mut app, mouse);
-                        }
+                        Event::Mouse(_) => {}
                         _ => {}
                     }
                 }
@@ -148,27 +143,6 @@ fn spawn_bridge_send(
             let _ = tx.send(OrcEvent::Error(e.to_string()));
         }
     });
-}
-
-fn handle_mouse(app: &mut App, mouse: MouseEvent) {
-    match mouse.kind {
-        MouseEventKind::ScrollUp => {
-            app.scroll_offset = app.scroll_offset.saturating_sub(3);
-        }
-        MouseEventKind::ScrollDown => {
-            app.scroll_offset = app.scroll_offset.saturating_add(3);
-        }
-        MouseEventKind::Down(MouseButton::Left) => {
-            if app.view == AppView::Edit {
-                if mouse.column < 22 {
-                    app.edit_focus = EditFocus::Sidebar;
-                } else {
-                    app.edit_focus = EditFocus::Editor;
-                }
-            }
-        }
-        _ => {}
-    }
 }
 
 fn setup_file_watcher(tx: mpsc::UnboundedSender<PathBuf>) -> Option<RecommendedWatcher> {
