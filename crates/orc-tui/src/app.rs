@@ -27,6 +27,39 @@ pub enum EditFocus {
     Editor,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PermissionMode {
+    Default,
+    Plan,
+    AcceptEdits,
+}
+
+impl PermissionMode {
+    pub fn label(&self) -> &str {
+        match self {
+            PermissionMode::Default => "default",
+            PermissionMode::Plan => "plan",
+            PermissionMode::AcceptEdits => "accept edits",
+        }
+    }
+
+    pub fn cli_flag(&self) -> &str {
+        match self {
+            PermissionMode::Default => "default",
+            PermissionMode::Plan => "plan",
+            PermissionMode::AcceptEdits => "acceptEdits",
+        }
+    }
+
+    pub fn cycle(&self) -> Self {
+        match self {
+            PermissionMode::Default => PermissionMode::Plan,
+            PermissionMode::Plan => PermissionMode::AcceptEdits,
+            PermissionMode::AcceptEdits => PermissionMode::Default,
+        }
+    }
+}
+
 impl Mode {
     pub fn label(&self) -> &str {
         match self {
@@ -61,6 +94,7 @@ pub enum ChatRole {
 pub struct App {
     pub view: AppView,
     pub mode: Mode,
+    pub permission_mode: PermissionMode,
     pub messages: Vec<ChatMessage>,
     pub input: String,
     pub input_cursor: usize,
@@ -94,6 +128,7 @@ impl App {
         Self {
             view: AppView::Chat,
             mode: Mode::Normal,
+            permission_mode: PermissionMode::Default,
             messages: Vec::new(),
             input: String::new(),
             input_cursor: 0,

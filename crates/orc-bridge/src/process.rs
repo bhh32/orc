@@ -63,6 +63,7 @@ pub struct ClaudeBridge {
     cwd: PathBuf,
     model: Option<String>,
     effort: Option<String>,
+    permission_mode: Option<String>,
     continue_last: bool,
     session: Session,
     active_tools: std::collections::HashMap<usize, String>,
@@ -74,6 +75,7 @@ impl ClaudeBridge {
             cwd,
             model: None,
             effort: None,
+            permission_mode: None,
             continue_last: false,
             session: Session::new(),
             active_tools: std::collections::HashMap::new(),
@@ -103,6 +105,10 @@ impl ClaudeBridge {
         self.effort = Some(effort);
     }
 
+    pub fn set_permission_mode(&mut self, mode: String) {
+        self.permission_mode = Some(mode);
+    }
+
     pub fn session(&self) -> &Session {
         &self.session
     }
@@ -129,6 +135,11 @@ impl ClaudeBridge {
         if let Some(ref effort) = self.effort {
             args.push("--effort".to_string());
             args.push(effort.clone());
+        }
+
+        if let Some(ref perm) = self.permission_mode {
+            args.push("--permission-mode".to_string());
+            args.push(perm.clone());
         }
 
         if let Some(ref sid) = self.session.id {

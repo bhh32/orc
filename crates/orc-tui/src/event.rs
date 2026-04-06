@@ -72,10 +72,12 @@ async fn run_loop(
                                 Action::SendMessage(text) => {
                                     app.push_user_message(&text);
                                     app.streaming = true;
+                                    let perm = app.permission_mode.cli_flag().to_string();
                                     spawn_bridge_send(
                                         bridge.clone(),
                                         text,
                                         bridge_tx.clone(),
+                                        perm,
                                     );
                                 }
                                 Action::ExecuteCommand(cmd) => {
@@ -119,10 +121,9 @@ fn spawn_bridge_send(
     bridge: Arc<Mutex<ClaudeBridge>>,
     prompt: String,
     tx: mpsc::UnboundedSender<OrcEvent>,
+    permission_mode: String,
 ) {
     tokio::spawn(async move {
-        // Take bridge out of mutex for the duration of the async send,
-        // replace with a temporary. This allows the event loop to continue.
         let mut taken = {
             let mut guard = bridge.lock().unwrap();
             let cwd = std::env::current_dir().unwrap_or_default();
@@ -130,6 +131,8 @@ fn spawn_bridge_send(
             std::mem::swap(&mut *guard, &mut tmp);
             tmp
         };
+
+        taken.set_permission_mode(permission_mode);
 
         let result = taken.send(&prompt, &tx).await;
 
@@ -234,7 +237,8 @@ fn execute_command(
             let full = format!("/{cmd}");
             app.push_user_message(&full);
             app.streaming = true;
-            spawn_bridge_send(bridge.clone(), full, bridge_tx.clone());
+            let perm = app.permission_mode.cli_flag().to_string();
+            spawn_bridge_send(bridge.clone(), full, bridge_tx.clone(), perm);
         }
     }
 }

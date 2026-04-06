@@ -17,6 +17,12 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
         return handle_picker(app, key);
     }
 
+    if key.code == KeyCode::BackTab {
+        app.permission_mode = app.permission_mode.cycle();
+        app.push_system(&format!("mode: {}", app.permission_mode.label()));
+        return Action::None;
+    }
+
     if key.modifiers.contains(KeyModifiers::CONTROL) {
         match key.code {
             KeyCode::Char('e') => {

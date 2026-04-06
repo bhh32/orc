@@ -7,8 +7,12 @@ use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 
 pub fn render(f: &mut Frame, app: &App, area: Rect) {
+    let perm_label = app.permission_mode.label();
+    let perm_len = perm_label.len() as u16 + 2;
+
     let chunks = Layout::horizontal([
         Constraint::Length(5),
+        Constraint::Length(perm_len),
         Constraint::Fill(1),
         Constraint::Length(35),
     ])
@@ -27,6 +31,12 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
         chunks[0],
     );
 
+    let perm_style = theme::statusline();
+    f.render_widget(
+        Paragraph::new(Span::styled(format!(" {perm_label} "), perm_style)),
+        chunks[1],
+    );
+
     let center = match app.view {
         AppView::Chat => {
             let model = app.model.as_deref().unwrap_or("--");
@@ -42,7 +52,7 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
     };
     f.render_widget(
         Paragraph::new(Span::styled(center, theme::statusline())),
-        chunks[1],
+        chunks[2],
     );
 
     let right = format!(
@@ -52,7 +62,7 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(
         Paragraph::new(Span::styled(right, theme::statusline()))
             .alignment(Alignment::Right),
-        chunks[2],
+        chunks[3],
     );
 }
 
